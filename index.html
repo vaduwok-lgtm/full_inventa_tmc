@@ -318,7 +318,7 @@ body{font-family:var(--font-sans);font-size:15px;line-height:1.5;background:var(
 'use strict';
 
 /* ═══════════════════════════════════════
-   СТАРЫЕ ПРОДУКТЫ p1–p27 — без изменений
+   СТАРЫЕ ПРОДУКТЫ p1–p27
 ═══════════════════════════════════════ */
 const stdProducts = [
   { id:"p1",  name:"Голень",                    baseUnit:"шт" },
@@ -450,8 +450,6 @@ let invSearchQ = '';
 
 /* ═══════════════════════════════════════
    КАРТА СООТВЕТСТВИЙ Excel ↔ старые p1–p27
-   У встроенной позиции берутся СТАРЫЕ данные/правила,
-   а имя/код/место — из Excel.
 ═══════════════════════════════════════ */
 const OLD_TO_EXCEL = {
   'FHPHF14076-F': 'p1',   // ГОЛЕНЬ В МАРИНАДЕ
@@ -792,9 +790,10 @@ function fmt(baseUnit,val){
   const rounded = Math.round((val+Number.EPSILON)*100)/100;
   return baseUnit==='шт' ? Math.round(rounded) : rounded;
 }
-function getStep(label){
-  const l = (label||'').toLowerCase();
-  return l.includes('кг') || l.includes('л') ? 0.1 : 1;
+function getStep(label, isBase){
+  const l = (label||'').toLowerCase().trim();
+  if(isBase && (l === 'кг' || l === 'л')) return 0.1;
+  return 1;
 }
 function rnd(v,s){ return Math.round((v+Number.EPSILON)*100)/100; }
 
@@ -912,7 +911,7 @@ function updateLocChipData(locIdx){
 }
 
 /* ═══════════════════════════════════════
-   STATS (без двойного счёта встроенных)
+   STATS
 ═══════════════════════════════════════ */
 function renderStats(){
   const newList = NOMENCLATURE.filter(n=>{
@@ -961,7 +960,7 @@ function matchesSearch(p){
 }
 
 /* ═══════════════════════════════════════
-   RENDER PRODUCTS — порядок строго по Excel
+   RENDER PRODUCTS
 ═══════════════════════════════════════ */
 function renderProducts(){
   const container=document.getElementById('productsList');
@@ -988,7 +987,7 @@ function renderProducts(){
     }
   });
 
-  // 2. Хвост: старые, которых нет в Excel (p18–p23 и т.п.)
+  // 2. Хвост: старые, которых нет в Excel
   const mappedOld = new Set(Object.values(OLD_TO_EXCEL));
   stdProducts.forEach(p=>{
     if(mappedOld.has(p.id)) return;
@@ -1054,7 +1053,7 @@ function renderCategoryStrip(){
 }
 
 /* ═══════════════════════════════════════
-   СТАРАЯ КАРТОЧКА (встроенная или хвост)
+   СТАРАЯ КАРТОЧКА
 ═══════════════════════════════════════ */
 function buildStdProductCard(product, unitRules, excelMeta){
   const pid=product.id;
@@ -1193,7 +1192,7 @@ function buildNewProductCard(n){
 
 function buildNewUnitBlock(n, uIdx, label){
   const code_=n.code;
-  const s=getStep(label);
+  const s=getStep(label, uIdx === 0);
   const block=document.createElement('div');
   block.className='unit-block';
   const bHeader=document.createElement('div');
@@ -1326,7 +1325,7 @@ function buildCustomProductCard(cp){
 }
 
 function buildCustomProductUnitBlock(cp){
-  const pid=cp.id; const s=getStep(cp.baseUnit);
+  const pid=cp.id; const s=getStep(cp.baseUnit, true);
   const block=document.createElement('div');
   block.className='unit-block';
   const bHeader=document.createElement('div');
@@ -1441,7 +1440,7 @@ function buildCPCustomUnitBlock(cp,cuIdx){
    СТАРЫЙ UNIT BLOCK
 ═══════════════════════════════════════ */
 function buildUnitBlock(loc,pid,idx,label,isCustom,coef,baseUnit){
-  const s=getStep(label);
+  const s=getStep(label, !isCustom && idx === 0);
   const block=document.createElement('div');
   block.className='unit-block';
   const bHeader=document.createElement('div');
@@ -1728,12 +1727,10 @@ function renderSummary(){
   const allRows=[];
   const mappedOldIds = new Set(Object.values(OLD_TO_EXCEL));
 
-  // 1. Идём строго по порядку NOMENCLATURE (как в Excel)
+  // 1. Строго по NOMENCLATURE
   NOMENCLATURE.forEach(n=>{
     const oldId = OLD_TO_EXCEL[n.code];
-    
     if (oldId) {
-      // Встроенная старая позиция
       const p = stdProducts.find(x=>x.id===oldId);
       if (!p) return;
       const total = locations.reduce((s,loc)=>s+getOldLocTotal(loc,oldId),0);
@@ -1744,40 +1741,20 @@ function renderSummary(){
           return v > 0 ? `${loc}: ${v}` : null; 
         })
         .filter(Boolean).join('\n');
-      
-      allRows.push({
-        pid: oldId, 
-        name: n.name, 
-        unit: p.baseUnit, 
-        total: display, 
-        detail, 
-        isCustom: false, 
-        isOld: true
-      });
+      allRows.push({pid: oldId, name: n.name, unit: p.baseUnit, total: display, detail, isCustom: false, isOld: true});
     } else {
-      // Новая позиция из Excel
       const total = locations.reduce((s,loc)=>s+getNewLocTotal(loc,n.code),0);
       const display = fmt(n.unit, total);
       const detail = locations.filter(loc=>getNqLocs(n.code).includes(loc) && getNewLocTotal(loc,n.code)>0)
         .map(loc=>`${loc}: ${fmt(n.unit,getNewLocTotal(loc,n.code))}`)
         .join('\n');
-        
-      allRows.push({
-        pid: n.code, 
-        name: n.name, 
-        unit: n.unit, 
-        total: display, 
-        detail, 
-        isCustom: false, 
-        isOld: false
-      });
+      allRows.push({pid: n.code, name: n.name, unit: n.unit, total: display, detail, isCustom: false, isOld: false});
     }
   });
 
-  // 2. Хвост: старые номенклатуры, которых нет в Excel (пиво, кеги и т.д.)
+  // 2. Хвост (пиво, кеги)
   stdProducts.forEach(p=>{
-    if (mappedOldIds.has(p.id)) return; // уже добавлены выше
-    
+    if (mappedOldIds.has(p.id)) return;
     const total = locations.reduce((s,loc)=>s+getOldLocTotal(loc,p.id),0);
     const display = fmt(p.baseUnit, total);
     const detail = locations.filter(loc=>getOldLocs(p.id).includes(loc))
@@ -1786,41 +1763,21 @@ function renderSummary(){
         return v > 0 ? `${loc}: ${v}` : null; 
       })
       .filter(Boolean).join('\n');
-      
-    allRows.push({
-      pid: p.id, 
-      name: p.name, 
-      unit: p.baseUnit, 
-      total: display, 
-      detail, 
-      isCustom: false, 
-      isOld: true
-    });
+    allRows.push({pid: p.id, name: p.name, unit: p.baseUnit, total: display, detail, isCustom: false, isOld: true});
   });
 
-  // 3. Кастомные продукты (добавленные вручную)
+  // 3. Кастомные
   const seenCp = new Set();
   locations.forEach(loc=>{
     getCustomProducts(loc).forEach(cp=>{
       if (seenCp.has(cp.id)) return;
       seenCp.add(cp.id);
-      
       const total = getOldLocTotal(loc, cp.id);
       const display = fmt(cp.baseUnit, total);
-      
-      allRows.push({
-        pid: cp.id, 
-        name: cp.name, 
-        unit: cp.baseUnit, 
-        total: display, 
-        detail: loc, 
-        isCustom: true, 
-        isOld: false
-      });
+      allRows.push({pid: cp.id, name: cp.name, unit: cp.baseUnit, total: display, detail: loc, isCustom: true, isOld: false});
     });
   });
 
-  // --- Рендер статистики ---
   const filled = allRows.filter(r=>r.total>0).length;
   document.getElementById('summaryStats').innerHTML=`
     <div class="ss-card"><div class="ss-val">${allRows.length}</div><div class="ss-lbl">Всего позиций</div></div>
@@ -1828,19 +1785,12 @@ function renderSummary(){
     <div class="ss-card"><div class="ss-val blue">${allRows.length?Math.round(filled/allRows.length*100):0}%</div><div class="ss-lbl">Готовность</div></div>
     <div class="ss-card"><div class="ss-val">${allRows.length-filled}</div><div class="ss-lbl">Пустых</div></div>`;
 
-  // --- Фильтрация ---
   let rows = allRows;
-  if (searchQ) {
-    rows = rows.filter(r => r.name.toLowerCase().includes(searchQ.toLowerCase()));
-  }
-  if (filterOnlyFilled) {
-    rows = rows.filter(r => r.total > 0);
-  }
+  if (searchQ) rows = rows.filter(r => r.name.toLowerCase().includes(searchQ.toLowerCase()));
+  if (filterOnlyFilled) rows = rows.filter(r => r.total > 0);
 
-  // --- Вывод списка ---
   const list = document.getElementById('summaryList');
   list.innerHTML='';
-  
   if (rows.length === 0) {
     list.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><p>Ничего не найдено</p></div>`;
     return;
@@ -1872,20 +1822,17 @@ function renderSummary(){
 function clearLocation(){
   showConfirm(`Очистить все данные для "${currentLoc}"?`,()=>{
     pushUndoSnapshot(`Очистка помещения «${currentLoc}»`);
-    // старые: чистим inv_/cu_
     stdProducts.forEach(p=>{
       const rules=locationRules[currentLoc]?.[p.id];
       if(rules) rules.forEach((_,uIdx)=>setRows(currentLoc,p.id,uIdx,[null]));
       setCU(currentLoc,p.id,[]);
     });
-    // новые: чистим nq_ только если не встроенные
     NOMENCLATURE.forEach(n=>{
       if(OLD_TO_EXCEL[n.code]) return;
       if(!getNqLocs(n.code).includes(currentLoc)) return;
       setNqRows(n.code, currentLoc, 0, [null]);
       (n.units||[]).forEach((_,i)=>setNqRows(n.code, currentLoc, i+1, [null]));
     });
-    // кастомные
     let cps=getCustomProducts(currentLoc);
     cps.forEach(cp=>{ cp.rows=[null]; cp.customUnits=[]; });
     setCustomProducts(currentLoc,cps);
