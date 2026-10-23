@@ -1726,65 +1726,140 @@ function showAddProductForm(){
 ═══════════════════════════════════════ */
 function renderSummary(){
   const allRows=[];
-  // Старые (встроенные + хвост) — по одному разу
-  stdProducts.forEach(p=>{
-    const total=locations.reduce((s,loc)=>s+getOldLocTotal(loc,p.id),0);
-    const display=fmt(p.baseUnit,total);
-    const excelMeta = NOMENCLATURE.find(n=>OLD_TO_EXCEL[n.code]===p.id) || null;
-    const displayName = excelMeta ? excelMeta.name : p.name;
-    const detail=locations.filter(loc=>getOldLocs(p.id).includes(loc))
-      .map(loc=>{ const v=fmt(p.baseUnit,getOldLocTotal(loc,p.id)); return v>0?`${loc}: ${v}`:null; })
-      .filter(Boolean).join('\n');
-    allRows.push({pid:p.id, name:displayName, unit:p.baseUnit, total:display, detail, isCustom:false, isOld:true});
-  });
-  // Новые (не встроенные)
+  const mappedOldIds = new Set(Object.values(OLD_TO_EXCEL));
+
+  // 1. Идём строго по порядку NOMENCLATURE (как в Excel)
   NOMENCLATURE.forEach(n=>{
-    if(OLD_TO_EXCEL[n.code]) return;
-    const total=locations.reduce((s,loc)=>s+getNewLocTotal(loc,n.code),0);
-    const display=fmt(n.unit,total);
-    const detail=locations.filter(loc=>getNqLocs(n.code).includes(loc) && getNewLocTotal(loc,n.code)>0)
-      .map(loc=>`${loc}: ${fmt(n.unit,getNewLocTotal(loc,n.code))}`)
-      .join('\n');
-    allRows.push({pid:n.code, name:n.name, unit:n.unit, total:display, detail, isCustom:false, isOld:false});
+    const oldId = OLD_TO_EXCEL[n.code];
+    
+    if (oldId) {
+      // Встроенная старая позиция
+      const p = stdProducts.find(x=>x.id===oldId);
+      if (!p) return;
+      const total = locations.reduce((s,loc)=>s+getOldLocTotal(loc,oldId),0);
+      const display = fmt(p.baseUnit, total);
+      const detail = locations.filter(loc=>getOldLocs(oldId).includes(loc))
+        .map(loc=>{ 
+          const v = fmt(p.baseUnit, getOldLocTotal(loc,oldId)); 
+          return v > 0 ? `${loc}: ${v}` : null; 
+        })
+        .filter(Boolean).join('\n');
+      
+      allRows.push({
+        pid: oldId, 
+        name: n.name, 
+        unit: p.baseUnit, 
+        total: display, 
+        detail, 
+        isCustom: false, 
+        isOld: true
+      });
+    } else {
+      // Новая позиция из Excel
+      const total = locations.reduce((s,loc)=>s+getNewLocTotal(loc,n.code),0);
+      const display = fmt(n.unit, total);
+      const detail = locations.filter(loc=>getNqLocs(n.code).includes(loc) && getNewLocTotal(loc,n.code)>0)
+        .map(loc=>`${loc}: ${fmt(n.unit,getNewLocTotal(loc,n.code))}`)
+        .join('\n');
+        
+      allRows.push({
+        pid: n.code, 
+        name: n.name, 
+        unit: n.unit, 
+        total: display, 
+        detail, 
+        isCustom: false, 
+        isOld: false
+      });
+    }
   });
-  // Кастомные
-  const seenCp=new Set();
-  locations.forEach(loc=>{
-    getCustomProducts(loc).forEach(cp=>{
-      if(seenCp.has(cp.id)) return;
-      seenCp.add(cp.id);
-      const total=getOldLocTotal(loc,cp.id);
-      const display=fmt(cp.baseUnit,total);
-      allRows.push({pid:cp.id, name:cp.name, unit:cp.baseUnit, total:display, detail:loc, isCustom:true, isOld:false});
+
+  // 2. Хвост: старые номенклатуры, которых нет в Excel (пиво, кеги и т.д.)
+  stdProducts.forEach(p=>{
+    if (mappedOldIds.has(p.id)) return; // уже добавлены выше
+    
+    const total = locations.reduce((s,loc)=>s+getOldLocTotal(loc,p.id),0);
+    const display = fmt(p.baseUnit, total);
+    const detail = locations.filter(loc=>getOldLocs(p.id).includes(loc))
+      .map(loc=>{ 
+        const v = fmt(p.baseUnit, getOldLocTotal(loc,p.id)); 
+        return v > 0 ? `${loc}: ${v}` : null; 
+      })
+      .filter(Boolean).join('\n');
+      
+    allRows.push({
+      pid: p.id, 
+      name: p.name, 
+      unit: p.baseUnit, 
+      total: display, 
+      detail, 
+      isCustom: false, 
+      isOld: true
     });
   });
 
-  const filled=allRows.filter(r=>r.total>0).length;
+  // 3. Кастомные продукты (добавленные вручную)
+  const seenCp = new Set();
+  locations.forEach(loc=>{
+    getCustomProducts(loc).forEach(cp=>{
+      if (seenCp.has(cp.id)) return;
+      seenCp.add(cp.id);
+      
+      const total = getOldLocTotal(loc, cp.id);
+      const display = fmt(cp.baseUnit, total);
+      
+      allRows.push({
+        pid: cp.id, 
+        name: cp.name, 
+        unit: cp.baseUnit, 
+        total: display, 
+        detail: loc, 
+        isCustom: true, 
+        isOld: false
+      });
+    });
+  });
+
+  // --- Рендер статистики ---
+  const filled = allRows.filter(r=>r.total>0).length;
   document.getElementById('summaryStats').innerHTML=`
     <div class="ss-card"><div class="ss-val">${allRows.length}</div><div class="ss-lbl">Всего позиций</div></div>
     <div class="ss-card"><div class="ss-val green">${filled}</div><div class="ss-lbl">Заполнено</div></div>
     <div class="ss-card"><div class="ss-val blue">${allRows.length?Math.round(filled/allRows.length*100):0}%</div><div class="ss-lbl">Готовность</div></div>
     <div class="ss-card"><div class="ss-val">${allRows.length-filled}</div><div class="ss-lbl">Пустых</div></div>`;
 
-  let rows=allRows;
-  if(searchQ) rows=rows.filter(r=>r.name.toLowerCase().includes(searchQ.toLowerCase()));
-  if(filterOnlyFilled) rows=rows.filter(r=>r.total>0);
-  const list=document.getElementById('summaryList');
+  // --- Фильтрация ---
+  let rows = allRows;
+  if (searchQ) {
+    rows = rows.filter(r => r.name.toLowerCase().includes(searchQ.toLowerCase()));
+  }
+  if (filterOnlyFilled) {
+    rows = rows.filter(r => r.total > 0);
+  }
+
+  // --- Вывод списка ---
+  const list = document.getElementById('summaryList');
   list.innerHTML='';
-  if(rows.length===0){
-    list.innerHTML=`<div class="empty-state"><div class="ei">🔍</div><p>Ничего не найдено</p></div>`;
+  
+  if (rows.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="ei">🔍</div><p>Ничего не найдено</p></div>`;
     return;
   }
-  rows.forEach(r=>{
-    const item=document.createElement('div');
-    item.className='sum-item'+(r.total===0?' zero':'')+(r.isCustom?' custom':'');
-    item.innerHTML=`
+
+  rows.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'sum-item' + (r.total===0 ? ' zero' : '') + (r.isCustom ? ' custom' : '');
+    item.innerHTML = `
       <div class="sum-item-left">
-        <div class="sum-item-name">${r.name}${r.isCustom?' <span style="font-size:10px;color:var(--warning);background:var(--warning-subtle);padding:1px 6px;border-radius:10px;font-weight:700;">свой</span>':''}${r.isOld?' <span style="font-size:10px;color:var(--text-tertiary);background:var(--border-light);padding:1px 6px;border-radius:10px;font-weight:700;">старая</span>':''}</div>
-        ${r.detail?`<div class="sum-item-detail">${r.detail.replace(/\n/g,'<br>')}</div>`:''}
+        <div class="sum-item-name">
+          ${r.name}
+          ${r.isCustom ? ' <span style="font-size:10px;color:var(--warning);background:var(--warning-subtle);padding:1px 6px;border-radius:10px;font-weight:700;">свой</span>' : ''}
+          ${r.isOld ? ' <span style="font-size:10px;color:var(--text-tertiary);background:var(--border-light);padding:1px 6px;border-radius:10px;font-weight:700;">старая</span>' : ''}
+        </div>
+        ${r.detail ? `<div class="sum-item-detail">${r.detail.replace(/\n/g,'<br>')}</div>` : ''}
       </div>
       <div class="sum-item-right">
-        <div class="sum-item-val ${r.total===0?'zero':''}">${r.total}</div>
+        <div class="sum-item-val ${r.total===0 ? 'zero' : ''}">${r.total}</div>
         <div class="sum-item-unit">${r.unit}</div>
       </div>`;
     list.appendChild(item);
