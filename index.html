@@ -359,6 +359,21 @@ function productCategory(id){
   return Object.keys(PRODUCT_CATEGORIES).find(k=>PRODUCT_CATEGORIES[k].ids.includes(id)) || 'other';
 }
 
+function inferProductGroup(name){
+  const text=(name||'').toLowerCase().replace(/ё/g,'е');
+  const rules=[
+    ['pack',/упаков|короб|пакет|салфет|бумаг|этикет|крыш|стакан(?!чик)|трубоч|вилк|ложк|ведр|кламшелл|разделител|лопатк|баскет|тара/],
+    ['promo',/игруш|брелок|сувенир|промо/],
+    ['sauce',/соус|топпинг|приправа|спец|маринад|соль|горчиц|кетчуп/],
+    ['meat',/мяс|куриц|курин|птиц|говядин|говяж|индейк|голен|крыл|филе|бекон|котлет|наггет|кревет|рыб|сосиск|колбас/],
+    ['veg',/картоф|овощ|лук|гриб|томат|помидор|огур|салат|руккол|зелень|морков|капуст|брокколи|кукуруз/],
+    ['drinks',/напит|вода|чай|кофе|сироп|сок|коктейл|лимонад|милкшейк/],
+    ['bakery',/булоч|хлеб|пирож|донат|маффин|чизкейк|тарт|печень|вафел|десерт|тортиль|торт|кекс|круассан/],
+    ['pantry',/сыр|молок|масло|мука|круп|сахар|яйц|паниров|кунжут|макарон/]
+  ];
+  return rules.find(([,pattern])=>pattern.test(text))?.[0]||'pantry';
+}
+
 function mu(label, fn){ return { label, toBase: fn }; }
 const RM = {1:22.31,2:20.09,3:17.87,4:15.65,5:13.43,6:11.21,7:8.99,8:6.77};
 const RC = {1:25.38,2:23.22,3:21.06,4:18.9,5:16.74,6:14.58,7:12.42,8:10.26};
@@ -1686,6 +1701,17 @@ function showAddProductForm(){
   form.innerHTML=`
     <div class="add-product-form-title">🆕 Новый продукт для «${currentLoc}»</div>
     <input type="text" placeholder="Название продукта" id="apfName">
+    <label for="apfGroup" style="font-size:12px;color:var(--text-secondary);">Категория (подставлена автоматически; можно изменить)</label>
+    <select id="apfGroup">
+      <option value="meat">Мясо / птица / полуфабрикаты</option>
+      <option value="veg">Овощи / картофель</option>
+      <option value="sauce">Соусы / специи</option>
+      <option value="drinks">Напитки / сиропы</option>
+      <option value="bakery">Выпечка / десерты</option>
+      <option value="pantry">Бакалея / сырьё</option>
+      <option value="pack">Упаковка / расходники</option>
+      <option value="promo">Промо</option>
+    </select>
     <select id="apfUnit">
       <option value="шт">шт — штуки</option>
       <option value="кг">кг — килограммы</option>
@@ -1696,12 +1722,20 @@ function showAddProductForm(){
       <button class="apf-cancel" id="apfCancel">Отмена</button>
     </div>`;
   wrap.innerHTML=''; wrap.appendChild(form);
+  const nameInput=form.querySelector('#apfName');
+  const updateGroupLabel=()=>{
+    const group=inferProductGroup(nameInput.value);
+    form.querySelector('#apfGroup').value=group;
+  };
+  nameInput.addEventListener('input',updateGroupLabel);
+  updateGroupLabel();
   form.querySelector('#apfSave').onclick=()=>{
     const name=form.querySelector('#apfName').value.trim();
     const baseUnit=form.querySelector('#apfUnit').value;
     if(!name){ toast('⚠️ Введите название продукта'); return; }
     pushUndoSnapshot(`Добавление «${name}»`);
-    const newProduct={id:genId(),name,baseUnit,rows:[null],customUnits:[]};
+    const group=form.querySelector('#apfGroup').value;
+    const newProduct={id:genId(),name,baseUnit,group,rows:[null],customUnits:[]};
     let cps=getCustomProducts(currentLoc);
     cps.push(newProduct);
     setCustomProducts(currentLoc,cps);
