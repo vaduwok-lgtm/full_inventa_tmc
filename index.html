@@ -1738,14 +1738,14 @@ function renderSummary(){
           return v > 0 ? `${loc}: ${v}` : null; 
         })
         .filter(Boolean).join('\n');
-      allRows.push({pid: oldId, name: n.name, unit: p.baseUnit, total: display, detail, isCustom: false, isOld: true});
+      allRows.push({pid: oldId, name: n.name, unit: p.baseUnit, total: display, detail, isCustom: false, isOld: true, group:n.group});
     } else {
       const total = locations.reduce((s,loc)=>s+getNewLocTotal(loc,n.code),0);
       const display = fmt(n.unit, total);
       const detail = locations.filter(loc=>getNqLocs(n.code).includes(loc) && getNewLocTotal(loc,n.code)>0)
         .map(loc=>`${loc}: ${fmt(n.unit,getNewLocTotal(loc,n.code))}`)
         .join('\n');
-      allRows.push({pid: n.code, name: n.name, unit: n.unit, total: display, detail, isCustom: false, isOld: false});
+      allRows.push({pid: n.code, name: n.name, unit: n.unit, total: display, detail, isCustom: false, isOld: false, group:n.group});
     }
   });
 
@@ -1760,7 +1760,7 @@ function renderSummary(){
         return v > 0 ? `${loc}: ${v}` : null; 
       })
       .filter(Boolean).join('\n');
-    allRows.push({pid: p.id, name: p.name, unit: p.baseUnit, total: display, detail, isCustom: false, isOld: true});
+    allRows.push({pid: p.id, name: p.name, unit: p.baseUnit, total: display, detail, isCustom: false, isOld: true, group:({chicken:'meat',potato:'veg',mixes:'sauce',pantry:'pantry',beer:'drinks',containers:'pack'})[productCategory(p.id)]||'pantry'});
   });
 
   // 3. Кастомные
@@ -1771,8 +1771,15 @@ function renderSummary(){
       seenCp.add(cp.id);
       const total = getOldLocTotal(loc, cp.id);
       const display = fmt(cp.baseUnit, total);
-      allRows.push({pid: cp.id, name: cp.name, unit: cp.baseUnit, total: display, detail: loc, isCustom: true, isOld: false});
+      allRows.push({pid: cp.id, name: cp.name, unit: cp.baseUnit, total: display, detail: loc, isCustom: true, isOld: false, group:cp.group||'pantry'});
     });
+  });
+
+  const groupOrder=Object.keys(NOMENCLATURE_GROUPS);
+  allRows.sort((a,b)=>{
+    const ga=groupOrder.indexOf(a.group), gb=groupOrder.indexOf(b.group);
+    const ca=ga<0?groupOrder.length:ga, cb=gb<0?groupOrder.length:gb;
+    return ca-cb || a.name.localeCompare(b.name,'ru');
   });
 
   const filled = allRows.filter(r=>r.total>0).length;
